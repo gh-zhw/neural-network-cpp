@@ -9,16 +9,19 @@ public:
     Matrix(size_t r, size_t c, float fill = 0.0f) : row_(r), col_(c) {
         data.resize(r, std::vector<float>(c, fill));
     }
+    Matrix(size_t, size_t, std::vector<float>);
     Matrix(const Matrix&) = default;
-    Matrix& operator=(const Matrix& matrix) = default;
-    Matrix(Matrix&& matrix) noexcept;
-    Matrix& operator=(Matrix&& matrix) noexcept;
+    Matrix& operator=(const Matrix&) = default;
+    Matrix(Matrix&&) noexcept;
+    Matrix& operator=(Matrix&&) noexcept;
 
-    float get(size_t i, size_t j) const { return data[i][j];}
+    float get(size_t i, size_t j) const { return data[i][j]; }
+    void set(size_t, size_t, float);
+    void assign(float);
     size_t row() const { return row_; }
     size_t col() const { return col_; }
 
-    // matrix operation
+    // matrix math operation
     Matrix T() const;
 
     Matrix add(const Matrix&) const;
@@ -46,4 +49,3 @@ private:
     size_t row_ = 0, col_ = 0;
     std::vector<std::vector<float>> data;
 };
-

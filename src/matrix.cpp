@@ -12,6 +12,20 @@ Matrix::Matrix(Matrix&& matrix) noexcept
         matrix.row_ = 0;
 }
 
+Matrix::Matrix(size_t r, size_t c, std::vector<float> arr) : row_(r), col_(c)
+{
+    if (arr.size() != r * c) {
+        throw std::invalid_argument("Array size does not match r * c");
+    }
+
+    data.resize(r, std::vector<float>(c));
+    for (size_t i = 0; i < r; ++i) {
+        for (size_t j = 0; j < c; ++j) {
+            data[i][j] = arr[i * c + j];
+        }
+    }
+}
+
 Matrix& Matrix::operator=(Matrix&& matrix) noexcept
 {
     if (this != &matrix) {
@@ -24,7 +38,24 @@ Matrix& Matrix::operator=(Matrix&& matrix) noexcept
     return *this;
 }
 
-// matrix operation
+void Matrix::set(size_t i, size_t j, float val)
+{
+    if (i >= row_ || j >= col_) {
+        throw std::out_of_range("Matrix::set: index out of range");
+    }
+    data[i][j] = val;
+}
+
+void Matrix::assign(float val)
+{
+    for (size_t i = 0; i < row_; ++i) {
+        for (size_t j = 0; j < col_; ++j) {
+            data[i][j] = val;
+        }
+    }
+}
+
+// matrix math operation
 Matrix Matrix::T() const
 {
     Matrix resMat(col_, row_);

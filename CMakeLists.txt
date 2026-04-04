@@ -8,4 +8,4 @@ include_directories(include)
 
 file(GLOB SOURCES "src/*.cpp")
 
-add_executable(matrix_test ${SOURCES})
+add_executable(main ${SOURCES})

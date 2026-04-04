@@ -1,122 +1,79 @@
+#include <cstdio>
+#include <vector>
+#include <iostream>
+
 #include "../include/matrix.hpp"
 
-#include <iostream>
-#include <iomanip>
 
-
-void printMatrix(const Matrix& mat, const std::string& name)
-{
-    std::cout << name << ":\n";
-    for (size_t i = 0; i < mat.row(); ++i) {
-        for (size_t j = 0; j < mat.col(); ++j) {
-            std::cout << std::setw(8) << mat.get(i, j) << " ";
-        }
-        std::cout << "\n";
+std::vector<float> load_binary(const char* filename, size_t expected_elements) {
+    FILE* f = fopen(filename, "rb");
+    if (!f) {
+        std::cerr << "Cannot open file: " << filename << std::endl;
+        return {};
     }
-    std::cout << "\n";
+    fseek(f, 0, SEEK_END);
+    size_t file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    size_t required_size = expected_elements * sizeof(float);
+    if (file_size != required_size) {
+        std::cerr << "File size mismatch: expected " << required_size
+                  << " bytes, got " << file_size << " bytes" << std::endl;
+        fclose(f);
+        return {};
+    }
+
+    std::vector<float> data(expected_elements);
+    fread(data.data(), sizeof(float), expected_elements, f);
+    fclose(f);
+    return data;
+}
+
+void draw_mnist_digit(const std::vector<float>& pixels, int width, int height) {
+    if (pixels.size() != width * height) {
+        std::cerr << "Pixel count mismatch: expected " << width * height
+                  << ", got " << pixels.size() << std::endl;
+        return;
+    }
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            float v = pixels[y * width + x];
+            int gray = 232 + static_cast<int>(v * 23.0f);
+            std::cout << "\033[48;5;" << gray << "m  \033[0m";
+        }
+        std::cout << "\n"; 
+    }
 }
 
 
-int main()
-{
-    try {
-        // 1. 构造和基础操作
-        Matrix A(2, 3, 1.0f);   // 2x3，填充1.0
-        Matrix B(2, 3, 2.0f);   // 2x3，填充2.0
-        Matrix C(3, 2, 3.0f);   // 3x2，填充3.0
+int main() {
+    const size_t num_train = 60000;
+    const size_t num_test  = 10000;
+    const size_t pixel_dim = 784;   // 28*28
 
-        std::cout << "=== Initial matrices ===\n";
-        printMatrix(A, "A (2x3, fill=1)");
-        printMatrix(B, "B (2x3, fill=2)");
-        printMatrix(C, "C (3x2, fill=3)");
+    auto train_images_arr = load_binary("./data/train_images.bin", 
+                                        num_train * pixel_dim);
+    auto train_labels_arr = load_binary("./data/train_labels.bin", 
+                                        num_train);
+    auto test_images_arr = load_binary("./data/test_images.bin", 
+                                        num_test  * pixel_dim);
+    auto test_labels_arr = load_binary("./data/test_labels.bin",
+                                         num_test);
 
-        // 2. 加法
-        Matrix D = A.add(B);
-        Matrix E = A + B;        // 运算符重载
-        std::cout << "=== Addition ===\n";
-        printMatrix(D, "A.add(B)");
-        printMatrix(E, "A + B");
+    auto train_images = Matrix(num_train, pixel_dim, train_images_arr);
+    auto train_labels = Matrix(num_train, 1, train_labels_arr);
+    auto test_images = Matrix(num_test, pixel_dim, test_images_arr);
+    auto test_labels = Matrix(num_test, 1, test_labels_arr);
 
-        // 3. 减法
-        Matrix F = A.sub(B);
-        Matrix G = A - B;
-        std::cout << "=== Subtraction ===\n";
-        printMatrix(F, "A.sub(B)");
-        printMatrix(G, "A - B");
+    std::cout << train_images.row() << " " << train_images.col() << std::endl;
+    std::cout << train_labels.row() << " " << train_labels.col() << std::endl;
+    std::cout << test_images.row() << " " << test_images.col() << std::endl;
+    std::cout << test_labels.row() << " " << test_labels.col() << std::endl;
 
-        // 4. 矩阵乘法
-        Matrix H = A.matMul(C);
-        Matrix I = A * C;
-        std::cout << "=== Matrix multiplication (A * C) ===\n";
-        printMatrix(H, "A.matMul(C)");
-        printMatrix(I, "A * C");
-
-        // 5. 逐元素乘法
-        Matrix J = A.elementMul(B);
-        std::cout << "=== Element-wise multiplication ===\n";
-        printMatrix(J, "A.elementMul(B)");
-
-        // 6. 转置
-        Matrix AT = A.T();
-        std::cout << "=== Transpose ===\n";
-        printMatrix(AT, "A.T()");
-
-        // 7. 标量运算
-        Matrix K = A.add(5.0f);
-        Matrix L = A * 2.0f;
-        Matrix M = A / 2.0f;
-        std::cout << "=== Scalar operations ===\n";
-        printMatrix(K, "A.add(5)");
-        printMatrix(L, "A * 2");
-        printMatrix(M, "A / 2");
-
-        // 8. 移动语义测试
-        Matrix moved = std::move(A);
-        std::cout << "=== After move ===\n";
-        // A 现在处于空状态（row=0,col=0）
-        printMatrix(moved, "moved from A");
-        std::cout << "Original A now has size: " << A.row() << "x" << A.col() << "\n\n";
-
-        // 9. 拷贝构造和赋值
-        Matrix copy = B;
-        Matrix assigned;
-        assigned = B;
-        std::cout << "=== Copy ===\n";
-        printMatrix(copy, "copy of B");
-        printMatrix(assigned, "assigned from B");
-
-        // 10. 异常测试
-        std::cout << "=== Exception tests ===\n";
-        try {
-            Matrix X(2,2,1);
-            Matrix Y(3,3,1);
-            Matrix Z = X.add(Y);  // 维度不匹配
-        } catch (const std::invalid_argument& e) {
-            std::cout << "Caught expected exception: " << e.what() << "\n";
-        }
-
-        try {
-            Matrix X(2,2,1);
-            Matrix Z = X / 0.0f;  // 除零
-        } catch (const std::invalid_argument& e) {
-            std::cout << "Caught division by zero: " << e.what() << "\n";
-        }
-
-        try {
-            Matrix X(2,3,1);
-            Matrix Y(4,5,1);
-            Matrix Z = X.matMul(Y);  // 列数 != 行数
-        } catch (const std::invalid_argument& e) {
-            std::cout << "Caught matMul dimension mismatch: " << e.what() << "\n";
-        }
-
-        std::cout << "\nAll tests completed successfully.\n";
-
-    } catch (const std::exception& e) {
-        std::cerr << "Unexpected exception: " << e.what() << std::endl;
-        return 1;
-    }
+    std::vector<float> first_image(train_images_arr.begin(), train_images_arr.begin() + pixel_dim);
+    std::cout << "\nFirst training digit (label = " << train_labels_arr[0] << "):\n";
+    draw_mnist_digit(first_image, 28, 28);
 
     return 0;
 }
-
