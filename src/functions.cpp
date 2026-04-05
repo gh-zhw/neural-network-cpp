@@ -81,7 +81,7 @@ Variable cross_entropy_loss(const Variable& logits, const Variable& labels)
 
     float total_loss = std::accumulate(losses.begin(), losses.end(), 0.0f);
     float avg_loss = total_loss / batch_size;
-    Variable loss(avg_loss, logits.require_grad_);
+    Variable loss(avg_loss, logits.require_grad_ || labels.require_grad_);
     loss.parent.push_back(&logits);
     loss.parent.push_back(&labels);
     loss.op_ = VariableOp::CROSS_ENTROPY_LOSS;
@@ -110,7 +110,7 @@ Variable mse_loss(const Variable& predictions, const Variable& targets) {
     float total_loss = std::accumulate(losses.begin(), losses.end(), 0.0f);
     float avg_loss = total_loss / batch_size;
 
-    Variable loss(avg_loss, predictions.require_grad_);
+    Variable loss(avg_loss, predictions.require_grad_ || targets.require_grad_);
     loss.parent.push_back(&predictions);
     loss.parent.push_back(&targets);
     loss.op_ = VariableOp::MSE_LOSS;

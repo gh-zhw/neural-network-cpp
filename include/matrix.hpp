@@ -37,13 +37,24 @@ public:
     Matrix operator-(const Matrix&) const;
     Matrix operator*(const Matrix&) const;
 
+    Matrix& operator+=(const Matrix&);
+    Matrix& operator-=(const Matrix&);
+
     Matrix operator+(float) const;
     Matrix operator-(float) const;
     Matrix operator*(float) const;
     Matrix operator/(float) const;
 
+    Matrix& operator+=(float);
+    Matrix& operator-=(float);
+    Matrix& operator*=(float);
+    Matrix& operator/=(float);
+
     friend Matrix operator+(float, const Matrix&);
     friend Matrix operator*(float, const Matrix&);
+
+    // print
+    void print() const;
 
 private:
     size_t row_ = 0, col_ = 0;

@@ -11,11 +11,23 @@ class Variable
 {
 public:
     Variable(float val, bool require_grad=true)
-        : value(1, 1, val), require_grad_(require_grad) {}
+        : value(1, 1, val), require_grad_(require_grad) {
+            if (require_grad) {
+                grad = Matrix(1, 1, 0.0f);
+            }
+        }
     Variable(const Matrix& matrix, bool require_grad=true)
-        : value(matrix), require_grad_(require_grad) {}
+        : value(matrix), require_grad_(require_grad) {
+            if (require_grad) {
+                grad = Matrix(matrix.row(), matrix.col(), 0.0f);
+            }
+        }
     Variable(size_t h, size_t w, bool require_grad=true)
-        : value(h, w), require_grad_(require_grad) {}
+        : value(h, w), require_grad_(require_grad) {
+            if (require_grad) {
+                grad = Matrix(h, w, 0.0f);
+            }
+        }
     Variable(const Variable&) = default;
     Variable& operator=(const Variable&) = default;
     Variable(Variable&& var) noexcept
@@ -41,10 +53,14 @@ public:
     size_t h() const { return value.row(); }
     size_t w() const { return value.col(); }
 
+    void zero_grad() { grad.assign(0.0f); }
+
     // variable math operations
     Variable operator+(const Variable&) const;
     Variable operator-(const Variable&) const;
     Variable operator*(const Variable&) const;
+
+    Variable elementMul(const Variable&) const;
 
     Variable operator+(float) const;
     Variable operator-(float) const;
@@ -61,12 +77,20 @@ public:
     // loss functions
     friend Variable cross_entropy_loss(const Variable&, const Variable&);
     friend Variable mse_loss(const Variable&, const Variable&);
-    
+
+    // backward
+    void backward();
+
+    // print
+    void printValue() { value.print(); }
+    void printGrad() { grad.print(); }
 
 private:
     bool require_grad_;
     Matrix value;
-    Matrix grad;
+    mutable Matrix grad;  // mutable to allow backpropagation in const contexts
     std::vector<std::variant<const Variable*, float>> parent;
     VariableOp op_ = VariableOp::NONE;
+
+    void _backward();
 };

@@ -1,4 +1,6 @@
 #include <stdexcept>
+#include <iostream>
+#include <iomanip>
 
 #include "../include/matrix.hpp"
 
@@ -101,7 +103,7 @@ Matrix Matrix::sub(const Matrix& matrix) const
 Matrix Matrix::matMul(const Matrix& matrix) const
 {
     if (col_ != matrix.row_) {
-        throw std::invalid_argument("Matrix dimensions must match for Matrix-Mul");
+        throw std::invalid_argument("Matrix dimensions must match for matrix-mul");
     }
 
     Matrix resMat(row_, matrix.col_);
@@ -120,7 +122,7 @@ Matrix Matrix::matMul(const Matrix& matrix) const
 Matrix Matrix::elementMul(const Matrix& matrix) const
 {
     if (row_ != matrix.row_ || col_ != matrix.col_) {
-        throw std::invalid_argument("Matrix dimensions must match for element-Mul");
+        throw std::invalid_argument("Matrix dimensions must match for element-mul");
     }
     
     Matrix resMat(row_, col_);
@@ -180,6 +182,34 @@ Matrix Matrix::operator*(const Matrix& matrix) const
     return matMul(matrix);
 }
 
+Matrix& Matrix::operator+=(const Matrix& matrix)
+{
+    if (row_ != matrix.row_ || col_ != matrix.col_) {
+        throw std::invalid_argument("Matrix dimensions must match for add");
+    }
+
+    for (size_t i = 0; i < row_; ++i) {
+        for (size_t j = 0; j < col_; ++j) {
+            data[i][j] += matrix.data[i][j];
+        }
+    }
+
+    return *this;
+}
+Matrix& Matrix::operator-=(const Matrix& matrix)
+{
+    if (row_ != matrix.row_ || col_ != matrix.col_) {
+        throw std::invalid_argument("Matrix dimensions must match for sub");
+    }
+
+    for (size_t i = 0; i < row_; ++i) {
+        for (size_t j = 0; j < col_; ++j) {
+            data[i][j] -= matrix.data[i][j];
+        }
+    }
+
+    return *this;
+}
 
 Matrix Matrix::operator+(float scalar) const
 {
@@ -201,6 +231,42 @@ Matrix Matrix::operator/(float scalar) const
     return elementMul(1.0f / scalar);
 }
 
+Matrix& Matrix::operator+=(float scalar)
+{
+    for (size_t i = 0; i < row_; ++i) {
+        for (size_t j = 0; j < col_; ++j) {
+            data[i][j] += scalar;
+        }
+    }
+    return *this;
+}
+Matrix& Matrix::operator-=(float scalar)
+{
+    for (size_t i = 0; i < row_; ++i) {
+        for (size_t j = 0; j < col_; ++j) {
+            data[i][j] -= scalar;
+        }
+    }
+    return *this;
+}
+Matrix& Matrix::operator*=(float scalar)
+{
+    for (size_t i = 0; i < row_; ++i) {
+        for (size_t j = 0; j < col_; ++j) {
+            data[i][j] *= scalar;
+        }
+    }
+    return *this;
+}
+Matrix& Matrix::operator/=(float scalar)
+{
+    if (scalar == 0.0f) {
+        throw std::invalid_argument("Division by zero in Matrix::operator/=");
+    }
+    this->operator*=(1.0f / scalar);
+    return *this;
+}
+
 Matrix operator+(float scalar, const Matrix& matrix)
 {
     return matrix.add(scalar);
@@ -208,4 +274,15 @@ Matrix operator+(float scalar, const Matrix& matrix)
 Matrix operator*(float scalar, const Matrix& matrix)
 {
     return matrix.elementMul(scalar);
+}
+
+// print
+void Matrix::print() const
+{
+    for (size_t i = 0; i < row_; ++i) {
+        for (size_t j = 0; j < col_; ++j) {
+            std::cout << std::setw(8) << data[i][j] << " ";
+        }
+        std::cout << "\n";
+    }
 }
