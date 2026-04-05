@@ -15,5 +15,7 @@ enum class VariableOp {
 
     _FUNC_OP,
     RELU,
-    LOG,
+    SIGMOID,
+    CROSS_ENTROPY_LOSS,
+    MSE_LOSS
 };

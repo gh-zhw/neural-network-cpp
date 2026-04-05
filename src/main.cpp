@@ -3,6 +3,8 @@
 #include <iostream>
 
 #include "../include/matrix.hpp"
+#include "../include/variable.hpp"
+#include "../include/functions.hpp"
 
 
 std::vector<float> load_binary(const char* filename, size_t expected_elements) {
@@ -44,6 +46,18 @@ void draw_mnist_digit(const std::vector<float>& pixels, int width, int height) {
         }
         std::cout << "\n"; 
     }
+}
+
+void printVar(const Variable& var, const std::string& name) {
+    std::cout << name << " value:\n";
+    for (size_t i = 0; i < var.h(); ++i) {
+        for (size_t j = 0; j < var.w(); ++j) {
+            std::cout << var.get(i, j) << " ";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "require grad: " << var.require_grad_ << std::endl;
+    std::cout << "op: " << static_cast<size_t>(var.op_) << std::endl;
 }
 
 
