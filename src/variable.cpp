@@ -1,5 +1,8 @@
 #include <stdexcept>
 #include <cmath>
+#include <queue>
+#include <vector>
+#include <unordered_map>
 
 #include "../include/variable.hpp"
 #include "../include/operations.hpp"
@@ -71,7 +74,7 @@ Variable Variable::operator/(float scalar) const {
 }
 Variable Variable::elementMul(const Variable& var) const
 {
-    Variable newVar(value.elementMul(value), require_grad_ || var.require_grad_);
+    Variable newVar(value.elementMul(var.value), require_grad_ || var.require_grad_);
     newVar.parent.push_back(this);
     newVar.parent.push_back(&var);
     newVar.op_ = VariableOp::ELEMENT_MUL_MM;
@@ -80,27 +83,84 @@ Variable Variable::elementMul(const Variable& var) const
 
 Variable operator+(float scalar, const Variable& var) {
     Variable newVar(var.value + scalar, var.require_grad_);
-    newVar.parent.push_back(&var);
     newVar.parent.push_back(scalar);
+    newVar.parent.push_back(&var);
     newVar.op_ = VariableOp::ADD_SM;
     return newVar;
 }
 Variable operator*(float scalar, const Variable& var) {
     Variable newVar(var.value * scalar, var.require_grad_);
-    newVar.parent.push_back(&var);
     newVar.parent.push_back(scalar);
+    newVar.parent.push_back(&var);
     newVar.op_ = VariableOp::ELEMENT_MUL_SM;
     return newVar;
 }
 
-// backward
+// Initiates reverse-mode automatic differentiation from this root node.
 void Variable::backward()
 {
+    if (!require_grad_) {
+        throw std::logic_error("Backward called on Variable with require_grad=false");
+    }
+    if (op_ == VariableOp::NONE) { return; }
+
+    // Initialize upstream gradient to 1.
     grad = Matrix(value.row(), value.col(), 1.0f);
-    _backward();
+    
+    // topological sort
+    std::vector<const Variable*> topo_vars;
+    std::unordered_map<const Variable*, size_t> indeg;
+    std::queue<const Variable*> que;
+
+    que.push(this);
+    indeg.insert({this, 0});
+
+    while (!que.empty()) {
+        const Variable* cur = que.front();
+        que.pop();
+        auto& curParent = cur->parent;
+        if (curParent.empty()) continue;
+        for (size_t i = 0; i < curParent.size(); ++i) {
+            if (std::holds_alternative<const Variable*>(curParent[i])) {
+                const Variable* v = std::get<const Variable*>(curParent[i]);
+                if (v->require_grad_) {
+                    que.push(v);
+                    indeg[v]++;
+                }
+            }
+        }
+    }
+
+    for (auto& pair : indeg) {
+        if (pair.second == 0) {
+            que.push(pair.first);
+        }
+    }
+
+    while (!que.empty()) {
+        const Variable* cur = que.front();
+        que.pop();
+        topo_vars.push_back(cur);
+        auto& curParent = cur->parent;
+        if (curParent.empty()) continue;
+        for (size_t i = 0; i < curParent.size(); ++i) {
+            if (std::holds_alternative<const Variable*>(curParent[i])) {
+                const Variable* v = std::get<const Variable*>(curParent[i]);
+                if (--indeg[v] == 0) {
+                    que.push(v);
+                }
+            }
+        }
+    }
+
+    // Perform backward pass in topological order.
+    for (size_t i = 0; i < topo_vars.size(); ++i) {
+        topo_vars[i]->_backward();
+    }
 }
 
-void Variable::_backward()
+// Computes and accumulates gradients for this node's parents.
+void Variable::_backward() const
 {
     if (!require_grad_ || op_ == VariableOp::NONE) { return; }
 

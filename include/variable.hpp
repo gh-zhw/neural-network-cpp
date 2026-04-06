@@ -82,8 +82,8 @@ public:
     void backward();
 
     // print
-    void printValue() { value.print(); }
-    void printGrad() { grad.print(); }
+    void printValue() const { value.print(); }
+    void printGrad() const { grad.print(); }
 
 private:
     bool require_grad_;
@@ -92,5 +92,5 @@ private:
     std::vector<std::variant<const Variable*, float>> parent;
     VariableOp op_ = VariableOp::NONE;
 
-    void _backward();
+    void _backward() const;
 };
