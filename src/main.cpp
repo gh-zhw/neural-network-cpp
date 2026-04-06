@@ -5,6 +5,7 @@
 #include "../include/matrix.hpp"
 #include "../include/variable.hpp"
 #include "../include/functions.hpp"
+#include "../include/optimizer.hpp"
 
 
 std::vector<float> load_binary(const char* filename, size_t expected_elements) {
@@ -48,62 +49,6 @@ void draw_mnist_digit(const std::vector<float>& pixels, int width, int height) {
     }
 }
 
-void test_long_computation_graph() {
-    std::cout << "\n========== Test: Long Computation Graph ==========\n";
-    
-    // Input X (2x3)
-    Variable X(2, 3, true);
-    X.set(0,0,1); X.set(0,1,2); X.set(0,2,3);
-    X.set(1,0,4); X.set(1,1,5); X.set(1,2,6);
-    
-    // Weight W1 (3x4)
-    Variable W1(3, 4, true);
-    for (size_t i=0; i<3; ++i)
-        for (size_t j=0; j<4; ++j)
-            W1.set(i,j, static_cast<float>(i*4+j+1) / 10.0f);  // small random
-    
-    // First linear: Z1 = X * W1 (2x4)
-    Variable Z1 = X * W1;
-    
-    // ReLU activation
-    Variable A1 = relu(Z1);
-    
-    // Weight W2 (4x2)
-    Variable W2(4, 2, true);
-    for (size_t i=0; i<4; ++i)
-        for (size_t j=0; j<2; ++j)
-            W2.set(i,j, static_cast<float>(i*2+j+1) / 10.0f);
-    
-    // Second linear: Z2 = A1 * W2 (2x2)
-    Variable Z2 = A1 * W2;
-    
-    // Sigmoid activation
-    Variable Y_pred = sigmoid(Z2);
-    
-    // Target matrix (2x2)
-    Variable Y_true(2, 2, false);
-    Y_true.set(0,0,0.2); Y_true.set(0,1,0.7);
-    Y_true.set(1,0,0.9); Y_true.set(1,1,0.4);
-    
-    // MSE loss
-    Variable loss = mse_loss(Y_pred, Y_true);
-    
-    std::cout << "Predicted Y:\n"; Y_pred.printValue();
-    std::cout << "Loss value: "; loss.printValue();
-    
-    // Backward
-    loss.backward();
-    
-    std::cout << "\nGradients:\n";
-    std::cout << "X.grad:\n"; X.printGrad();
-    std::cout << "W1.grad:\n"; W1.printGrad();
-    std::cout << "W2.grad:\n"; W2.printGrad();
-    std::cout << "Z1.grad:\n"; Z1.printGrad();
-    std::cout << "A1.grad:\n"; A1.printGrad();
-    std::cout << "Z2.grad:\n"; Z2.printGrad();
-    std::cout << "Y_pred.grad:\n"; Y_pred.printGrad();
-}
-
 
 int main() {
     // const size_t num_train = 60000;
@@ -134,7 +79,54 @@ int main() {
     // draw_mnist_digit(first_image, 28, 28);
 
     try {
-        test_long_computation_graph();
+        std::vector<std::pair<float, float>> data;
+        for (int i = 0; i < 100; ++i) {
+            float x = static_cast<float>(i) / 100.0f;
+            float y = 2.0f * x + 1.0f + 0.05f * (static_cast<float>(rand()) / RAND_MAX - 0.5f);
+            data.emplace_back(x, y);
+        }
+
+        size_t N = data.size();
+        Variable X(N, 1, false);
+        Variable Y(N, 1, false);
+        for (size_t i = 0; i < N; ++i) {
+            X.set(i, 0, data[i].first);
+            Y.set(i, 0, data[i].second);
+        }
+
+        Variable w(1, 1, true);
+        Variable b(1, 1, true);
+        w.set(0, 0, 0.0f);
+        b.set(0, 0, 0.0f);
+
+        Variable ones(N, 1, false);
+        for (size_t i = 0; i < N; ++i) ones.set(i, 0, 1.0f);
+
+        MomentumSGD optimizer(0.01f, 0.9f);
+
+        for (int epoch = 0; epoch < 200; ++epoch) {
+            // y_pred = X * w + ones * b
+            Variable Xw = X * w;          // (N,1) * (1,1) -> (N,1)
+            Variable b_expanded = ones * b;     // (N,1)
+            Variable y_pred = Xw + b_expanded;  // (N,1)
+
+            Variable loss = mse_loss(y_pred, Y);
+
+            loss.backward();
+            optimizer.update(w);
+            optimizer.update(b);
+            w.zero_grad();
+            b.zero_grad();
+
+            if (epoch % 20 == 0) {
+                std::cout << "Epoch " << epoch << ", Loss: " << loss.get(0,0)
+                        << ", w = " << w.get(0,0)
+                        << ", b = " << b.get(0,0) << std::endl;
+            }
+        }
+
+        std::cout << "\nFinal: w = " << w.get(0,0)
+                << ", b = " << b.get(0,0) << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Exception: " << e.what() << std::endl;
         return 1;

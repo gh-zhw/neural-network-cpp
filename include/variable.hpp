@@ -81,6 +81,10 @@ public:
     // backward
     void backward();
 
+    // optimize
+    friend class SGD;
+    friend class MomentumSGD;
+
     // print
     void printValue() const { value.print(); }
     void printGrad() const { grad.print(); }
