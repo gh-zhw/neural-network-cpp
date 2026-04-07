@@ -7,6 +7,7 @@
 #include "../include/variable.hpp"
 #include "../include/functions.hpp"
 #include "../include/optimizer.hpp"
+#include "../include/layers.hpp"
 
 
 std::vector<float> load_binary(const char* filename, size_t expected_elements) {
@@ -68,54 +69,51 @@ int main() {
         auto data = generate_data(N);
 
         // X (N,1); Y (N,1)
-        Variable X(N, 1, false);
-        Variable Y(N, 1, false);
+        Variable X(N, 1, false, "X");
+        Variable Y(N, 1, false, "Y");
         for (size_t i = 0; i < N; ++i) {
             X.set(i, 0, data[i].first);
             Y.set(i, 0, data[i].second);
         }
 
-        Variable ones(N, 1, false);
-        for (size_t i = 0; i < N; ++i) ones.set(i, 0, 1.0f);
-
         const size_t hidden_dim = 10;
-        Variable W1(1, hidden_dim, true);   // 输入到隐藏层
-        Variable b1(1, hidden_dim, true);   // 隐藏层偏置
-        Variable W2(hidden_dim, 1, true);   // 隐藏层到输出
-        Variable b2(1, 1, true);            // 输出层偏置
+        Linear linear1(1, hidden_dim, true, "linear_1");
+        Linear linear2(hidden_dim, hidden_dim, true, "linear_2");
+        Linear linear3(hidden_dim, 1, true, "linear_3");
 
-        // initialize params
-        for (size_t i = 0; i < W1.h(); ++i)
-            for (size_t j = 0; j < W1.w(); ++j)
-                W1.set(i, j, 0.1f * (static_cast<float>(rand()) / RAND_MAX - 0.5f));
-        for (size_t i = 0; i < b1.h(); ++i)
-            for (size_t j = 0; j < b1.w(); ++j)
-                b1.set(i, j, 0.0f);
-        for (size_t i = 0; i < W2.h(); ++i)
-            for (size_t j = 0; j < W2.w(); ++j)
-                W2.set(i, j, 0.1f * (static_cast<float>(rand()) / RAND_MAX - 0.5f));
-        b2.set(0, 0, 0.0f);
+        auto params = linear1.paramters();
+        auto params2 = linear2.paramters();
+        auto params3 = linear3.paramters();
+        params.insert(params.end(), params2.begin(), params2.end());
+        params.insert(params.end(), params3.begin(), params3.end());
 
-        MomentumSGD optimizer({&W1, &b1, &W2, &b2}, 0.05f, 0.9f);
+        MomentumSGD optimizer(params, 0.05f, 0.9f);
 
         const int epochs = 500;
-        for (int epoch = 0; epoch < epochs; ++epoch) {
-            // hidden = relu(X * W1 + ones * b1)
-            Variable XW1 = X * W1;                     // (N, hidden_dim)
-            Variable b1_expanded = ones * b1;          // (N, hidden_dim)
-            Variable pre_act = XW1 + b1_expanded;      // (N, hidden_dim)
-            Variable hidden = relu(pre_act);           // (N, hidden_dim)
+        for (int epoch = 1; epoch < epochs + 1; ++epoch) {
+            // hidden_1 = relu(X * W1 + b1)
+            Variable linear1_x = linear1.forward(X);
+            linear1_x.setName("linear1_x");
+            Variable hidden_1 = relu(linear1_x);
+            hidden_1.setName("hidden_1");
 
-            // output = hidden * W2 + ones * b2
-            Variable hiddenW2 = hidden * W2;            // (N, 1)
-            Variable b2_expanded = ones * b2;           // (N, 1)
-            Variable y_pred = hiddenW2 + b2_expanded;   // (N, 1)
+            // hidden_2 = relu(hidden_1 * W2 + b2)
+            Variable linear2_x = linear2.forward(hidden_1);
+            linear2_x.setName("linear2_x");
+            Variable hidden_2 = relu(linear2_x);
+            hidden_2.setName("hidden_2");
+
+            // y_pred = hidden_2 * W2 + b2
+            Variable y_pred = linear3.forward(hidden_2);
+            y_pred.setName("y_pred");
 
             Variable loss = mse_loss(y_pred, Y);
 
             optimizer.zero_grad();
             loss.backward();
             optimizer.update();
+            linear1.clear_cache();
+            linear2.clear_cache();
 
             if (epoch % 50 == 0) {
                 float loss_val = loss.get(0, 0);
@@ -124,13 +122,13 @@ int main() {
         }
 
         std::cout << "\nFinal predictions (first 5 samples):\n";
-        Variable XW1 = X * W1;
-        Variable b1_expanded = ones * b1;
-        Variable pre_act = XW1 + b1_expanded;
-        Variable hidden = relu(pre_act);
-        Variable hiddenW2 = hidden * W2;
-        Variable b2_expanded = ones * b2;
-        Variable y_pred = hiddenW2 + b2_expanded;
+
+        Variable linear1_x = linear1.forward(X);
+        Variable hidden_1 = relu(linear1_x);
+        Variable linear2_x = linear2.forward(hidden_1);
+        Variable hidden_2 = relu(linear2_x);
+        Variable y_pred = linear3.forward(hidden_2);
+
         for (size_t i = 0; i < 5; ++i) {
             float x_val = X.get(i, 0);
             float y_true = Y.get(i, 0);

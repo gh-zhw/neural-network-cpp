@@ -10,20 +10,27 @@
 class Variable
 {
 public:
-    Variable(float val, bool require_grad=true)
-        : value(1, 1, val), require_grad_(require_grad) {
+    Variable() = default;
+    Variable(float val, bool require_grad = true, const std::string& name = "")
+        : name_(name), value(1, 1, val), require_grad_(require_grad) {
             if (require_grad) {
                 grad = Matrix(1, 1, 0.0f);
             }
         }
-    Variable(const Matrix& matrix, bool require_grad=true)
-        : value(matrix), require_grad_(require_grad) {
+    Variable(const Matrix& matrix, 
+             bool require_grad = true, 
+             const std::string& name = "")
+        : name_(name), value(matrix), require_grad_(require_grad)
+        {
             if (require_grad) {
                 grad = Matrix(matrix.row(), matrix.col(), 0.0f);
             }
         }
-    Variable(size_t h, size_t w, bool require_grad=true)
-        : value(h, w), require_grad_(require_grad) {
+    Variable(size_t h, size_t w, 
+             bool require_grad = true, 
+             const std::string& name = "")
+        : name_(name), value(h, w), require_grad_(require_grad)
+        {
             if (require_grad) {
                 grad = Matrix(h, w, 0.0f);
             }
@@ -31,13 +38,15 @@ public:
     Variable(const Variable&) = default;
     Variable& operator=(const Variable&) = default;
     Variable(Variable&& var) noexcept
-        :value(std::move(var.value)),
-         grad(std::move(var.grad)),
-         require_grad_(var.require_grad_),
-         parent(std::move(var.parent)),
-         op_(var.op_) {}
+        : name_(std::move(var.name_)),
+          value(std::move(var.value)),
+          grad(std::move(var.grad)),
+          require_grad_(var.require_grad_),
+          parent(std::move(var.parent)),
+          op_(var.op_) {}
     Variable& operator=(Variable&& var) noexcept {
         if (this != &var) {
+            name_ = std::move(var.name_);
             value = std::move(var.value);
             grad = std::move(var.grad);
             require_grad_= var.require_grad_;
@@ -52,6 +61,8 @@ public:
     void assign(float);
     size_t h() const { return value.row(); }
     size_t w() const { return value.col(); }
+    std::string name() const { return name_; }
+    void setName(const std::string& name) { name_ = name; }
 
     void zero_grad() { grad.assign(0.0f); }
 
@@ -90,6 +101,7 @@ public:
     void printGrad() const { grad.print(); }
 
 private:
+    std::string name_;
     bool require_grad_;
     Matrix value;
     mutable Matrix grad;  // mutable to allow backpropagation in const contexts
