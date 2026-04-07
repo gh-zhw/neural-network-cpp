@@ -1,39 +1,57 @@
 #include "../include/optimizer.hpp"
 
 
-void SGD::update(Variable& var)
+void SGD::update()
 {
-    if (!var.require_grad_) { return; }
+    for (Variable* param : params) {
+        if (!param->require_grad_) { continue; }
 
-    for (size_t i = 0; i < var.h(); ++i) {
-        for (size_t j = 0; j < var.w(); ++j) {
-            var.set(i, j, 
-                var.get(i, j) - learning_rate_ * var.grad.get(i, j));
+        for (size_t i = 0; i < param->h(); ++i) {
+            for (size_t j = 0; j < param->w(); ++j) {
+                param->set(i, j, 
+                    param->get(i, j) - learning_rate_ * param->grad.get(i, j));
+            }
         }
     }
 }
 
-void MomentumSGD::update(Variable& var)
+void SGD::zero_grad()
 {
-    if (!var.require_grad_) return;
-    Matrix& velocity = get_velocity(var);
-    for (size_t i = 0; i < var.h(); ++i) {
-        for (size_t j = 0; j < var.w(); ++j) {
-            // v = momentum * v - lr * grad
-            float new_v = momentum_ * velocity.get(i, j) - learning_rate_ * var.grad.get(i, j);
-            velocity.set(i, j, new_v);
-            // param += v
-            var.set(i, j, var.get(i, j) + new_v);
-        }
+    for (Variable* param : params) {
+        if (!param->require_grad_) { continue; }
+        param->zero_grad();
     }
 }
 
-Matrix& MomentumSGD::get_velocity(Variable& var) {
-    auto it = velocities_.find(&var);
-    if (it == velocities_.end()) {
-        Matrix vel(var.h(), var.w(), 0.0f);
-        auto result = velocities_.emplace(&var, std::move(vel));
-        return result.first->second;
+void MomentumSGD::update()
+{
+    for (Variable* param : params) {
+        if (!param->require_grad_) { continue; }
+        Matrix& velocity = velocities_[param];
+        for (size_t i = 0; i < param->h(); ++i) {
+            for (size_t j = 0; j < param->w(); ++j) {
+                // v = momentum * v - lr * grad
+                float new_v = momentum_ * velocity.get(i, j) - learning_rate_ * param->grad.get(i, j);
+                velocity.set(i, j, new_v);
+                // param += v
+                param->set(i, j, param->get(i, j) + new_v);
+            }
+        }
     }
-    return it->second;
+    
+}
+
+void MomentumSGD::zero_grad()
+{
+    for (Variable* param : params) {
+        if (!param->require_grad_) { continue; }
+        param->zero_grad();
+    }
+}
+
+void MomentumSGD::init_velocity() {
+    for (Variable* param : params) {
+        Matrix vel(param->h(), param->w(), 0.0f);
+        velocities_.emplace(param, std::move(vel));
+    }
 }

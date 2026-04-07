@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <vector>
 #include <iostream>
+#include <random>
 
 #include "../include/matrix.hpp"
 #include "../include/variable.hpp"
@@ -49,8 +50,104 @@ void draw_mnist_digit(const std::vector<float>& pixels, int width, int height) {
     }
 }
 
+// y = x^2 + noise
+std::vector<std::pair<float, float>> generate_data(int n) {
+    std::vector<std::pair<float, float>> data;
+    for (int i = 0; i < n; ++i) {
+        float x = 2.0f * (static_cast<float>(i) / n) - 1.0f;  // [-1, 1]
+        float y = x * x;
+        y += 0.05f * (static_cast<float>(rand()) / RAND_MAX - 0.5f);
+        data.emplace_back(x, y);
+    }
+    return data;
+}
 
 int main() {
+    try {
+        const size_t N = 200;
+        auto data = generate_data(N);
+
+        // X (N,1); Y (N,1)
+        Variable X(N, 1, false);
+        Variable Y(N, 1, false);
+        for (size_t i = 0; i < N; ++i) {
+            X.set(i, 0, data[i].first);
+            Y.set(i, 0, data[i].second);
+        }
+
+        Variable ones(N, 1, false);
+        for (size_t i = 0; i < N; ++i) ones.set(i, 0, 1.0f);
+
+        const size_t hidden_dim = 10;
+        Variable W1(1, hidden_dim, true);   // 输入到隐藏层
+        Variable b1(1, hidden_dim, true);   // 隐藏层偏置
+        Variable W2(hidden_dim, 1, true);   // 隐藏层到输出
+        Variable b2(1, 1, true);            // 输出层偏置
+
+        // initialize params
+        for (size_t i = 0; i < W1.h(); ++i)
+            for (size_t j = 0; j < W1.w(); ++j)
+                W1.set(i, j, 0.1f * (static_cast<float>(rand()) / RAND_MAX - 0.5f));
+        for (size_t i = 0; i < b1.h(); ++i)
+            for (size_t j = 0; j < b1.w(); ++j)
+                b1.set(i, j, 0.0f);
+        for (size_t i = 0; i < W2.h(); ++i)
+            for (size_t j = 0; j < W2.w(); ++j)
+                W2.set(i, j, 0.1f * (static_cast<float>(rand()) / RAND_MAX - 0.5f));
+        b2.set(0, 0, 0.0f);
+
+        MomentumSGD optimizer({&W1, &b1, &W2, &b2}, 0.05f, 0.9f);
+
+        const int epochs = 500;
+        for (int epoch = 0; epoch < epochs; ++epoch) {
+            // hidden = relu(X * W1 + ones * b1)
+            Variable XW1 = X * W1;                     // (N, hidden_dim)
+            Variable b1_expanded = ones * b1;          // (N, hidden_dim)
+            Variable pre_act = XW1 + b1_expanded;      // (N, hidden_dim)
+            Variable hidden = relu(pre_act);           // (N, hidden_dim)
+
+            // output = hidden * W2 + ones * b2
+            Variable hiddenW2 = hidden * W2;            // (N, 1)
+            Variable b2_expanded = ones * b2;           // (N, 1)
+            Variable y_pred = hiddenW2 + b2_expanded;   // (N, 1)
+
+            Variable loss = mse_loss(y_pred, Y);
+
+            optimizer.zero_grad();
+            loss.backward();
+            optimizer.update();
+
+            if (epoch % 50 == 0) {
+                float loss_val = loss.get(0, 0);
+                std::cout << "Epoch " << epoch << ", Loss: " << loss_val << std::endl;
+            }
+        }
+
+        std::cout << "\nFinal predictions (first 5 samples):\n";
+        Variable XW1 = X * W1;
+        Variable b1_expanded = ones * b1;
+        Variable pre_act = XW1 + b1_expanded;
+        Variable hidden = relu(pre_act);
+        Variable hiddenW2 = hidden * W2;
+        Variable b2_expanded = ones * b2;
+        Variable y_pred = hiddenW2 + b2_expanded;
+        for (size_t i = 0; i < 5; ++i) {
+            float x_val = X.get(i, 0);
+            float y_true = Y.get(i, 0);
+            float y_pred_val = y_pred.get(i, 0);
+            std::cout << "x = " << x_val << ", true = " << y_true
+                    << ", pred = " << y_pred_val << std::endl;
+        }
+
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Exception: " << e.what() << std::endl;
+        return 1;
+    }
+
+    return 0;
+
+
     // const size_t num_train = 60000;
     // const size_t num_test  = 10000;
     // const size_t pixel_dim = 784;   // 28*28
@@ -78,59 +175,4 @@ int main() {
     // std::cout << "\nFirst training digit (label = " << train_labels_arr[0] << "):\n";
     // draw_mnist_digit(first_image, 28, 28);
 
-    try {
-        std::vector<std::pair<float, float>> data;
-        for (int i = 0; i < 100; ++i) {
-            float x = static_cast<float>(i) / 100.0f;
-            float y = 2.0f * x + 1.0f + 0.05f * (static_cast<float>(rand()) / RAND_MAX - 0.5f);
-            data.emplace_back(x, y);
-        }
-
-        size_t N = data.size();
-        Variable X(N, 1, false);
-        Variable Y(N, 1, false);
-        for (size_t i = 0; i < N; ++i) {
-            X.set(i, 0, data[i].first);
-            Y.set(i, 0, data[i].second);
-        }
-
-        Variable w(1, 1, true);
-        Variable b(1, 1, true);
-        w.set(0, 0, 0.0f);
-        b.set(0, 0, 0.0f);
-
-        Variable ones(N, 1, false);
-        for (size_t i = 0; i < N; ++i) ones.set(i, 0, 1.0f);
-
-        MomentumSGD optimizer(0.01f, 0.9f);
-
-        for (int epoch = 0; epoch < 200; ++epoch) {
-            // y_pred = X * w + ones * b
-            Variable Xw = X * w;          // (N,1) * (1,1) -> (N,1)
-            Variable b_expanded = ones * b;     // (N,1)
-            Variable y_pred = Xw + b_expanded;  // (N,1)
-
-            Variable loss = mse_loss(y_pred, Y);
-
-            loss.backward();
-            optimizer.update(w);
-            optimizer.update(b);
-            w.zero_grad();
-            b.zero_grad();
-
-            if (epoch % 20 == 0) {
-                std::cout << "Epoch " << epoch << ", Loss: " << loss.get(0,0)
-                        << ", w = " << w.get(0,0)
-                        << ", b = " << b.get(0,0) << std::endl;
-            }
-        }
-
-        std::cout << "\nFinal: w = " << w.get(0,0)
-                << ", b = " << b.get(0,0) << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "Exception: " << e.what() << std::endl;
-        return 1;
-    }
-
-    return 0;
 }
