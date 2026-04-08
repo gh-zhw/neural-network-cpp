@@ -2,6 +2,7 @@
 #include <vector>
 #include <iostream>
 #include <random>
+#include <cstdint>
 
 #include "../include/matrix.hpp"
 #include "../include/variable.hpp"
@@ -34,6 +35,47 @@ std::vector<float> load_binary(const char* filename, size_t expected_elements) {
     return data;
 }
 
+std::vector<Matrix> create_image_batches(const std::vector<float>& images,
+                                         size_t batch_size,
+                                         size_t pixel_dim,
+                                         size_t max_batches = SIZE_MAX) {
+    size_t num_samples = images.size() / pixel_dim;
+    std::vector<Matrix> batches;
+    for (size_t start = 0; start < num_samples && batches.size() < max_batches; start += batch_size) {
+        size_t cur_batch_size = std::min(batch_size, num_samples - start);
+        Matrix batch(cur_batch_size, pixel_dim);
+        for (size_t i = 0; i < cur_batch_size; ++i) {
+            const float* row = images.data() + (start + i) * pixel_dim;
+            for (size_t j = 0; j < pixel_dim; ++j) {
+                batch.set(i, j, row[j]);
+            }
+        }
+        batches.push_back(std::move(batch));
+    }
+    return batches;
+}
+
+// one-hot
+std::vector<Matrix> create_label_batches(const std::vector<float>& labels,
+                                         size_t batch_size,
+                                         size_t num_classes = 10,
+                                         size_t max_batches = SIZE_MAX) {
+    size_t num_samples = labels.size();
+    std::vector<Matrix> batches;
+    for (size_t start = 0; start < num_samples && batches.size() < max_batches; start += batch_size) {
+        size_t cur_batch_size = std::min(batch_size, num_samples - start);
+        Matrix batch(cur_batch_size, num_classes, 0.0f);
+        for (size_t i = 0; i < cur_batch_size; ++i) {
+            int cls = static_cast<int>(labels[start + i]);
+            if (cls >= 0 && cls < num_classes) {
+                batch.set(i, cls, 1.0f);
+            }
+        }
+        batches.push_back(std::move(batch));
+    }
+    return batches;
+}
+
 void draw_mnist_digit(const std::vector<float>& pixels, int width, int height) {
     if (pixels.size() != width * height) {
         std::cerr << "Pixel count mismatch: expected " << width * height
@@ -47,130 +89,158 @@ void draw_mnist_digit(const std::vector<float>& pixels, int width, int height) {
             int gray = 232 + static_cast<int>(v * 23.0f);
             std::cout << "\033[48;5;" << gray << "m  \033[0m";
         }
-        std::cout << "\n"; 
+        std::cout << "\n";
     }
 }
 
-// y = x^2 + noise
-std::vector<std::pair<float, float>> generate_data(int n) {
-    std::vector<std::pair<float, float>> data;
-    for (int i = 0; i < n; ++i) {
-        float x = 2.0f * (static_cast<float>(i) / n) - 1.0f;  // [-1, 1]
-        float y = x * x;
-        y += 0.05f * (static_cast<float>(rand()) / RAND_MAX - 0.5f);
-        data.emplace_back(x, y);
-    }
-    return data;
-}
 
-int main() {
+int main(int argc, char* argv[]) {
+
+    if (argc < 2) {
+        std::cout << "Usage: " << argv[0] << " <data_directory>" << std::endl;
+        return 1;
+    }
+
+    std::string data_dir = argv[1];
+    std::string train_images_path = data_dir + "/train_images.bin";
+    std::string train_labels_path = data_dir + "/train_labels.bin";
+    std::string test_images_path  = data_dir + "/test_images.bin";
+    std::string test_labels_path  = data_dir + "/test_labels.bin";
+
+    const size_t num_train = 60000;
+    const size_t num_test  = 10000;
+    const size_t pixel_dim = 784;    // 28*28
+    const size_t batch_size = 32;
+    const size_t num_classes = 10;
+    const size_t epochs = 20;
+    const size_t N = 100;              // max batches
+
     try {
-        const size_t N = 200;
-        auto data = generate_data(N);
+        // load data
+        auto train_images = load_binary(train_images_path.c_str(), 
+                                        num_train * pixel_dim);
+        auto train_labels = load_binary(train_labels_path.c_str(), 
+                                        num_train);
+        auto test_images = load_binary(test_images_path.c_str(), 
+                                       num_test * pixel_dim);
+        auto test_labels = load_binary(test_labels_path.c_str(), 
+                                       num_test);
 
-        // X (N,1); Y (N,1)
-        Variable X(N, 1, false, "X");
-        Variable Y(N, 1, false, "Y");
-        for (size_t i = 0; i < N; ++i) {
-            X.set(i, 0, data[i].first);
-            Y.set(i, 0, data[i].second);
-        }
+        auto train_image_batches = create_image_batches(train_images, batch_size, pixel_dim, N);
+        auto train_label_batches = create_label_batches(train_labels, batch_size, num_classes, N);
+        auto test_image_batches = create_image_batches(test_images, batch_size, pixel_dim, N);
+        auto test_label_batches = create_label_batches(test_labels, batch_size, num_classes, N);
 
-        const size_t hidden_dim = 10;
-        Linear linear1(1, hidden_dim, true, "linear_1");
-        Linear linear2(hidden_dim, hidden_dim, true, "linear_2");
-        Linear linear3(hidden_dim, 1, true, "linear_3");
+        std::cout << "train image batches: ";
+        std::cout << train_image_batches.size() << std::endl;
+        std::cout << "test image batches: ";
+        std::cout << test_image_batches.size() << std::endl;
 
-        auto params = linear1.paramters();
-        auto params2 = linear2.paramters();
-        auto params3 = linear3.paramters();
-        params.insert(params.end(), params2.begin(), params2.end());
-        params.insert(params.end(), params3.begin(), params3.end());
+        // create model
+        Linear linear_1(784, 1024, true, "linear_1");
+        Linear linear_2(1024, 256, true, "linear_2");
+        Linear linear_3(256, 10, true, "linear_3");
 
-        MomentumSGD optimizer(params, 0.05f, 0.9f);
+        auto params = linear_1.paramters();
+        auto params_2 = linear_2.paramters();
+        auto params_3 = linear_3.paramters();
 
-        const int epochs = 500;
-        for (int epoch = 1; epoch < epochs + 1; ++epoch) {
-            // hidden_1 = relu(X * W1 + b1)
-            Variable linear1_x = linear1.forward(X);
-            linear1_x.setName("linear1_x");
-            Variable hidden_1 = relu(linear1_x);
-            hidden_1.setName("hidden_1");
+        params.insert(params.end(), params_2.begin(), params_2.end());
+        params.insert(params.end(), params_3.begin(), params_3.end());
 
-            // hidden_2 = relu(hidden_1 * W2 + b2)
-            Variable linear2_x = linear2.forward(hidden_1);
-            linear2_x.setName("linear2_x");
-            Variable hidden_2 = relu(linear2_x);
-            hidden_2.setName("hidden_2");
+        MomentumSGD optimizer(params, 0.01f, 0.9f);
 
-            // y_pred = hidden_2 * W2 + b2
-            Variable y_pred = linear3.forward(hidden_2);
-            y_pred.setName("y_pred");
+        // train
+        std::cout << "==================== Train ====================\n";
+        for (size_t epoch = 1; epoch < epochs + 1; ++epoch) {
+            size_t correct = 0;
+            float epoch_loss = 0.0f;
+            for (size_t i = 0; i < train_image_batches.size(); ++i) {
+                std::cout << "\r[Epoch " << epoch << "/" << epochs << " Batch " << i + 1 << "/" << train_image_batches.size() << "] " << std::flush;
 
-            Variable loss = mse_loss(y_pred, Y);
+                auto images = train_image_batches[i];
+                auto labels = train_label_batches[i];
 
-            optimizer.zero_grad();
-            loss.backward();
-            optimizer.update();
-            linear1.clear_cache();
-            linear2.clear_cache();
+                Variable x(images, false);
+                Variable y(labels, false);
 
-            if (epoch % 50 == 0) {
-                float loss_val = loss.get(0, 0);
-                std::cout << "Epoch " << epoch << ", Loss: " << loss_val << std::endl;
+                Variable linear_1_out = linear_1.forward(x);
+                Variable relu_1_out = relu(linear_1_out);
+                Variable linear_2_out = linear_2.forward(relu_1_out);
+                Variable relu_2_out = relu(linear_2_out);
+                Variable y_pre = linear_3.forward(relu_2_out);
+
+                Variable loss = cross_entropy_loss(y_pre, y);
+                epoch_loss += loss.get(0, 0);
+
+                for (size_t j = 0; j < y_pre.h(); ++j) {
+                    float max_val = y_pre.get(j, 0);
+                    size_t true_i = 0, pred_i = 0;
+                    for (size_t k = 0; k < y_pre.w(); ++k) {
+                        if (y.get(j, k) == 1.0f) { true_i = k; }
+                        if (y_pre.get(j, k) > max_val) {
+                            max_val = y_pre.get(j, k);
+                            pred_i = k;
+                        }
+                    }
+                    if (true_i == pred_i) { correct++; }
+                }
+
+                optimizer.zero_grad();
+                loss.backward();
+                optimizer.update();
+
+                linear_1.clear_cache();
+                linear_2.clear_cache();
+                linear_3.clear_cache();
             }
+            size_t num_samples = train_image_batches.size() * batch_size;
+            std::cout << "loss = " << epoch_loss / num_samples << ", accuracy = " << 100.0f * correct / num_samples << "%\n";
         }
 
-        std::cout << "\nFinal predictions (first 5 samples):\n";
+        // test
+        std::cout << "==================== Test ====================\n";
+        size_t correct = 0;
+        for (size_t i = 0; i < test_image_batches.size(); ++i) {
+                std::cout << "\r[" << i + 1 << "/" << train_image_batches.size() << "] " << std::flush;
+                auto images = test_image_batches[i];
+                auto labels = test_label_batches[i];
 
-        Variable linear1_x = linear1.forward(X);
-        Variable hidden_1 = relu(linear1_x);
-        Variable linear2_x = linear2.forward(hidden_1);
-        Variable hidden_2 = relu(linear2_x);
-        Variable y_pred = linear3.forward(hidden_2);
+                Variable x(images, false);
+                Variable y(labels, false);
 
-        for (size_t i = 0; i < 5; ++i) {
-            float x_val = X.get(i, 0);
-            float y_true = Y.get(i, 0);
-            float y_pred_val = y_pred.get(i, 0);
-            std::cout << "x = " << x_val << ", true = " << y_true
-                    << ", pred = " << y_pred_val << std::endl;
-        }
+                Variable linear_1_out = linear_1.forward(x);
+                Variable relu_1_out = relu(linear_1_out);
+                Variable linear_2_out = linear_2.forward(relu_1_out);
+                Variable relu_2_out = relu(linear_2_out);
+                Variable linear_3_out = linear_3.forward(relu_2_out);
+                Variable y_pre = relu(linear_3_out);
 
-        return 0;
+                for (size_t j = 0; j < y_pre.h(); ++j) {
+                    float max_val = y_pre.get(j, 0);
+                    size_t true_i = 0, pred_i = 0;
+                    for (size_t k = 0; k < y_pre.w(); ++k) {
+                        if (y.get(j, k) == 1.0f) { true_i = k; }
+                        if (y_pre.get(j, k) > max_val) {
+                            max_val = y_pre.get(j, k);
+                            pred_i = k;
+                        }
+                    }
+                    if (true_i == pred_i) { correct++; }
+                }
+
+                linear_1.clear_cache();
+                linear_2.clear_cache();
+                linear_3.clear_cache();
+            }
+        size_t num_samples = train_image_batches.size() * batch_size;
+        std::cout << "accuracy = " << 100.0f * correct / num_samples << "%\n";
+
     } catch (const std::exception& e) {
         std::cerr << "Exception: " << e.what() << std::endl;
         return 1;
     }
 
     return 0;
-
-
-    // const size_t num_train = 60000;
-    // const size_t num_test  = 10000;
-    // const size_t pixel_dim = 784;   // 28*28
-
-    // auto train_images_arr = load_binary("./data/train_images.bin", 
-    //                                     num_train * pixel_dim);
-    // auto train_labels_arr = load_binary("./data/train_labels.bin", 
-    //                                     num_train);
-    // auto test_images_arr = load_binary("./data/test_images.bin", 
-    //                                     num_test  * pixel_dim);
-    // auto test_labels_arr = load_binary("./data/test_labels.bin",
-    //                                      num_test);
-
-    // auto train_images = Matrix(num_train, pixel_dim, train_images_arr);
-    // auto train_labels = Matrix(num_train, 1, train_labels_arr);
-    // auto test_images = Matrix(num_test, pixel_dim, test_images_arr);
-    // auto test_labels = Matrix(num_test, 1, test_labels_arr);
-
-    // std::cout << train_images.row() << " " << train_images.col() << std::endl;
-    // std::cout << train_labels.row() << " " << train_labels.col() << std::endl;
-    // std::cout << test_images.row() << " " << test_images.col() << std::endl;
-    // std::cout << test_labels.row() << " " << test_labels.col() << std::endl;
-
-    // std::vector<float> first_image(train_images_arr.begin(), train_images_arr.begin() + pixel_dim);
-    // std::cout << "\nFirst training digit (label = " << train_labels_arr[0] << "):\n";
-    // draw_mnist_digit(first_image, 28, 28);
 
 }
